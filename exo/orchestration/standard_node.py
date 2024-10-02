@@ -86,7 +86,7 @@ class StandardNode(Node):
                 self.node_download_progress[status_data.get("node_id")] = (
                     download_progress
                 )
-                self._on_download_progress.trigger_all(status_data)
+                self._on_download_progress.trigger_all()
             if self.topology_viz:
                 self.topology_viz.update_visualization(
                     self.current_topology,

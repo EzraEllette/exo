@@ -5,7 +5,6 @@ import json
 import time
 import traceback
 import uuid
-import sys
 from exo.orchestration.standard_node import StandardNode
 from exo.networking.grpc.grpc_server import GRPCServer
 from exo.networking.udp.udp_discovery import UDPDiscovery
@@ -18,6 +17,7 @@ from exo.api import ChatGPTAPI
 from exo.download.shard_download import ShardDownloader, RepoProgressEvent
 from exo.download.hf.hf_shard_download import HFShardDownloader
 from exo.helpers import (
+    pretty_print_bytes_per_second,
     print_yellow_exo,
     find_available_port,
     DEBUG,
@@ -35,8 +35,6 @@ from exo.viz.topology_viz import TopologyViz
 
 # parse args
 parser = argparse.ArgumentParser(description="Initialize GRPC Discovery")
-parser.add_argument("command", nargs="?", choices=["run"], help="Command to run")
-parser.add_argument("model_name", nargs="?", help="Model name to run")
 parser.add_argument("--node-id", type=str, default=None, help="Node ID")
 parser.add_argument("--node-host", type=str, default="0.0.0.0", help="Node host")
 parser.add_argument("--node-port", type=int, default=None, help="Node port")
@@ -237,17 +235,76 @@ last_broadcast_time = 0
 def throttled_broadcast(shard: Shard, event: RepoProgressEvent):
     global last_broadcast_time
     current_time = time.time()
+
     if event.status == "complete" or current_time - last_broadcast_time >= 0.1:
         last_broadcast_time = current_time
-        asyncio.create_task(node.broadcast_opaque_status("", json.dumps({
-            "type": "download_progress",
-            "node_id": node.id,
-            "progress": event.to_dict()
-        })))
+        asyncio.create_task(
+            node.broadcast_opaque_status(
+                "",
+                json.dumps(
+                    {
+                        "type": "download_progress",
+                        "node_id": node.id,
+                        "progress": event.to_dict(),
+                    }
+                ),
+            )
+        )
+
 
 shard_downloader.on_progress.register("broadcast").on_next(throttled_broadcast)
 
+def throttled_broadcast_web():
+    # global last_broadcast_time
+    # current_time = time.time()
 
+    # if current_time - last_broadcast_time >= 0.1:
+    node_count = 0
+    downloaded_bytes = 0
+    total_bytes = 0
+    # show max eta
+    overall_eta = 0
+    # average speed
+    overall_speed = 0
+    complete_count = 0
+    repo_id = ""
+
+    for _node_id, progress in node.node_download_progress.items():
+        print(progress)
+        if progress.status == "complete":
+            complete_count += 1
+
+        node_count += 1
+        downloaded_bytes += progress.downloaded_bytes
+        total_bytes += progress.total_bytes
+        overall_eta = max(overall_eta, progress.overall_eta)
+        overall_speed += progress.overall_speed
+        repo_id = progress.repo_id
+
+    percentage = downloaded_bytes / total_bytes * 100 if total_bytes > 0 else 0
+
+    speed = pretty_print_bytes_per_second(overall_speed / node_count)
+    percentage_str = f"{percentage:.1f}%"
+    eta_str = f"{overall_eta}"
+
+    status = "in_progress"
+
+    if complete_count >= node_count:
+        status = "complete"
+
+    progress_data = {
+        "overall_eta": eta_str,
+        "overall_speed": speed,
+        "percentage": percentage_str,
+        "repo_id": repo_id,
+        "status": status,
+    }
+
+    asyncio.create_task(api.broadcast(
+        json.dumps({"progress": progress_data, "type": "download_progress"})
+    ))
+
+node._on_download_progress.register("broadcast_web").on_next(throttled_broadcast_web)
 async def shutdown(signal, loop):
     """Gracefully shutdown the server and close the asyncio loop."""
     print(f"Received exit signal {signal.name}...")
@@ -303,38 +360,6 @@ async def run_model_cli(
         node.on_token.deregister(callback_id)
 
 
-# TODO Delete this
-async def test():
-    total_bytes = 600
-    downloaded_bytes = 0
-    status = "in_progress"
-    overall_eta = 15
-    while True:
-        await api.broadcast(
-            json.dumps(
-                {
-                    "progress": {
-                        "total_bytes": total_bytes,
-                        "downloaded_bytes": downloaded_bytes,
-                        "overall_eta": overall_eta,
-                        "status": status,
-                        "repo_id": "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
-                    },
-                    "type": "download_progress",
-                    "node_id": node.id,
-                }
-            )
-        )
-        if status == "complete":
-            break
-
-        downloaded_bytes += 80
-        overall_eta -= 2
-        if downloaded_bytes >= total_bytes:
-            status = "complete"
-        await asyncio.sleep(1)
-
-
 async def main():
     loop = asyncio.get_running_loop()
 
@@ -347,27 +372,23 @@ async def main():
 
     await node.start(wait_for_peers=args.wait_for_peers)
 
-    if args.command == "run" or args.run_model:
-        model_name = args.model_name or args.run_model
-        if not model_name:
-            print("Error: Model name is required when using 'run' command or --run-model")
-            return
-        await run_model_cli(node, inference_engine, model_name, args.prompt)
+    if args.run_model:
+        await run_model_cli(node, inference_engine, args.run_model, args.prompt)
     else:
-        asyncio.create_task(api.run(port=args.chatgpt_api_port))  # Start the API server as a non-blocking task
+        asyncio.create_task(
+            api.run(port=args.chatgpt_api_port)
+        )  # Start the API server as a non-blocking task
+
         await asyncio.Event().wait()
 
 
-def run():
-  loop = asyncio.new_event_loop()
-  asyncio.set_event_loop(loop)
-  try:
-    loop.run_until_complete(main())
-  except KeyboardInterrupt:
-    print("Received keyboard interrupt. Shutting down...")
-  finally:
-    loop.run_until_complete(shutdown(signal.SIGTERM, loop))
-    loop.close()
-
 if __name__ == "__main__":
-  run()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        print("Received keyboard interrupt. Shutting down...")
+    finally:
+        loop.run_until_complete(shutdown(signal.SIGTERM, loop))
+        loop.close()
