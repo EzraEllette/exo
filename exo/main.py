@@ -347,15 +347,15 @@ async def main():
 
     await node.start(wait_for_peers=args.wait_for_peers)
 
-  if args.command == "run" or args.run_model:
-    model_name = args.model_name or args.run_model
-    if not model_name:
-      print("Error: Model name is required when using 'run' command or --run-model")
-      return
-    await run_model_cli(node, inference_engine, model_name, args.prompt)
-  else:
-    asyncio.create_task(api.run(port=args.chatgpt_api_port))  # Start the API server as a non-blocking task
-    await asyncio.Event().wait()
+    if args.command == "run" or args.run_model:
+        model_name = args.model_name or args.run_model
+        if not model_name:
+            print("Error: Model name is required when using 'run' command or --run-model")
+            return
+        await run_model_cli(node, inference_engine, model_name, args.prompt)
+    else:
+        asyncio.create_task(api.run(port=args.chatgpt_api_port))  # Start the API server as a non-blocking task
+        await asyncio.Event().wait()
 
 
 def run():

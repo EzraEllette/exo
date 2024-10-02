@@ -328,12 +328,14 @@ document.addEventListener("alpine:init", () => {
 
   function downloadEventHandler(message) {
     const { progress } = message;
+    console.log(message);
     const { status } = progress;
     if (status === `in_progress`) {
-      const { downloaded_bytes, repo_id, total_bytes, overall_eta } = progress;
+      const { overall_eta, overall_speed, percentage, repo_id } = progress;
       Alpine.store("downloadState").eta = overall_eta;
-      Alpine.store("downloadState").totalBytes = total_bytes;
-      Alpine.store("downloadState").downloadedBytes = downloaded_bytes;
+      Alpine.store("downloadState").speed = overall_speed;
+      Alpine.store("downloadState").percentage = percentage;
+
       if (!Alpine.store("downloadState").downloadStarted) {
         Alpine.store("downloadState").downloadStarted = true;
       }
@@ -346,9 +348,9 @@ document.addEventListener("alpine:init", () => {
   }
   Alpine.store("downloadState", {
     downloadStarted: false,
-    eta: 10,
-    totalBytes: 2,
-    downloadedBytes: 1,
+    speed: "",
+    eta: "",
+    percentage: "0%",
     downloadComplete: false,
     repoId: "",
     downloadEventHandle: null,

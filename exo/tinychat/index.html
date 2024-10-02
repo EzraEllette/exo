@@ -220,9 +220,9 @@
     <p x-text="`${repoId}`"></p>
     <div class="progress-bar">
       <div class="progress-bar-fill"
-      :style="'width:' + (Math.floor((downloadedBytes / totalBytes) * 100) || 0) + '%'"></div>
+      :style="'width:' + (Math.floor(percentage.split('%')[0])) + '%'"></div>
     </div>
-    <p x-text="(Math.floor((downloadedBytes / totalBytes) * 100) || 0) + '%    ' + `${eta} seconds remaining`"></p>
+    <p x-text="`${percentage} - ${speed}`"></p>
   </div>
   <div id="success_toast" x-cloak x-transition x-show="showSuccess" x-init="$watch('showSuccess', value => { if (value) { setTimeout(() => showSuccess = false, 3000) } })" class="success-toast">
     <p>Download Complete!</p>
