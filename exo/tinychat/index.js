@@ -23,21 +23,6 @@ document.addEventListener("alpine:init", () => {
     // image handling
     imagePreview: null,
 
-    // download progress
-    downloadProgress: null,
-    downloadProgressInterval: null, // To keep track of the polling interval
-
-    // Pending message storage
-    pendingMessage: null,
-
-    init() {
-      // Clean up any pending messages
-      localStorage.removeItem("pendingMessage");
-
-      // Start polling for download progress
-      this.startDownloadProgressPolling();
-    },
-
     removeHistory(cstate) {
       const index = this.histories.findIndex((state) => {
         return state.time === cstate.time;
@@ -46,25 +31,6 @@ document.addEventListener("alpine:init", () => {
         this.histories.splice(index, 1);
         localStorage.setItem("histories", JSON.stringify(this.histories));
       }
-    },
-    // Utility functions
-    formatBytes(bytes) {
-      if (bytes === 0) return "0 B";
-      const k = 1024;
-      const sizes = ["B", "KB", "MB", "GB", "TB"];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-    },
-
-    formatDuration(seconds) {
-      if (seconds === null || seconds === undefined || isNaN(seconds))
-        return "";
-      const h = Math.floor(seconds / 3600);
-      const m = Math.floor((seconds % 3600) / 60);
-      const s = Math.floor(seconds % 60);
-      if (h > 0) return `${h}h ${m}m ${s}s`;
-      if (m > 0) return `${m}m ${s}s`;
-      return `${s}s`;
     },
 
     async handleImageUpload(event) {

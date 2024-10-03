@@ -18,6 +18,7 @@ from exo.api import ChatGPTAPI
 from exo.download.shard_download import ShardDownloader, RepoProgressEvent
 from exo.download.hf.hf_shard_download import HFShardDownloader
 from exo.helpers import (
+    pretty_print_bytes,
     pretty_print_bytes_per_second,
     print_yellow_exo,
     find_available_port,
@@ -288,7 +289,11 @@ def throttled_broadcast_web():
 
         speed = pretty_print_bytes_per_second(overall_speed / node_count)
         percentage_str = f"{percentage:.1f}%"
-        eta_str = f"{overall_eta}"
+        rounded_eta = timedelta(seconds=round(overall_eta.total_seconds()))
+
+        eta_str = f"{rounded_eta}"
+
+        current_size = f"{pretty_print_bytes(downloaded_bytes).split(' ')[0]}/{pretty_print_bytes(total_bytes)}"
 
         status = "in_progress"
 
@@ -301,6 +306,7 @@ def throttled_broadcast_web():
             "percentage": percentage_str,
             "repo_id": repo_id,
             "status": status,
+            "current_size": current_size,
         }
 
         asyncio.create_task(api.broadcast(
