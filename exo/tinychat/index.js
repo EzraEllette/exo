@@ -4,7 +4,7 @@ document.addEventListener("alpine:init", () => {
     cstate: {
       time: null,
       messages: [],
-      selectedModel: 'llama-3.1-8b',
+      selectedModel: "llama-3.1-8b",
     },
 
     // historical state
@@ -23,21 +23,6 @@ document.addEventListener("alpine:init", () => {
     // image handling
     imagePreview: null,
 
-    // download progress
-    downloadProgress: null,
-    downloadProgressInterval: null, // To keep track of the polling interval
-
-    // Pending message storage
-    pendingMessage: null,
-
-    init() {
-      // Clean up any pending messages
-      localStorage.removeItem("pendingMessage");
-
-      // Start polling for download progress
-      this.startDownloadProgressPolling();
-    },
-
     removeHistory(cstate) {
       const index = this.histories.findIndex((state) => {
         return state.time === cstate.time;
@@ -46,24 +31,6 @@ document.addEventListener("alpine:init", () => {
         this.histories.splice(index, 1);
         localStorage.setItem("histories", JSON.stringify(this.histories));
       }
-    },
-    // Utility functions
-    formatBytes(bytes) {
-      if (bytes === 0) return '0 B';
-      const k = 1024;
-      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    },
-
-    formatDuration(seconds) {
-      if (seconds === null || seconds === undefined || isNaN(seconds)) return '';
-      const h = Math.floor(seconds / 3600);
-      const m = Math.floor((seconds % 3600) / 60);
-      const s = Math.floor(seconds % 60);
-      if (h > 0) return `${h}h ${m}m ${s}s`;
-      if (m > 0) return `${m}m ${s}s`;
-      return `${s}s`;
     },
 
     async handleImageUpload(event) {
@@ -82,7 +49,6 @@ document.addEventListener("alpine:init", () => {
         reader.readAsDataURL(file);
       }
     },
-
 
     async handleSend() {
       try {
@@ -110,12 +76,12 @@ document.addEventListener("alpine:init", () => {
         localStorage.setItem("pendingMessage", value);
         this.processMessage(value);
       } catch (error) {
-        console.error('error', error)
-        this.lastErrorMessage = error.message || 'Unknown error on handleSend';
-        this.errorMessage = error.message || 'Unknown error on handleSend';
+        console.error("error", error);
+        this.lastErrorMessage = error.message || "Unknown error on handleSend";
+        this.errorMessage = error.message || "Unknown error on handleSend";
         setTimeout(() => {
           this.errorMessage = null;
-        }, 5 * 1000)
+        }, 5 * 1000);
         this.generating = false;
       }
     },
@@ -129,62 +95,67 @@ document.addEventListener("alpine:init", () => {
         this.tokens_per_second = 0;
 
         // prepare messages for API request
-        let apiMessages = this.cstate.messages.map(msg => {
-          if (msg.content.startsWith('![Uploaded Image]')) {
+        let apiMessages = this.cstate.messages.map((msg) => {
+          if (msg.content.startsWith("![Uploaded Image]")) {
             return {
               role: "user",
               content: [
                 {
                   type: "image_url",
                   image_url: {
-                    url: this.imageUrl
-                  }
+                    url: this.imageUrl,
+                  },
                 },
                 {
                   type: "text",
-                  text: value // Use the actual text the user typed
-                }
-              ]
+                  text: value, // Use the actual text the user typed
+                },
+              ],
             };
           } else {
             return {
               role: msg.role,
-              content: msg.content
+              content: msg.content,
             };
           }
         });
-        const containsImage = apiMessages.some(msg => Array.isArray(msg.content) && msg.content.some(item => item.type === 'image_url'));
+        const containsImage = apiMessages.some(
+          (msg) =>
+            Array.isArray(msg.content) &&
+            msg.content.some((item) => item.type === "image_url")
+        );
         if (containsImage) {
           // Map all messages with string content to object with type text
-          apiMessages = apiMessages.map(msg => {
-            if (typeof msg.content === 'string') {
+          apiMessages = apiMessages.map((msg) => {
+            if (typeof msg.content === "string") {
               return {
                 ...msg,
                 content: [
                   {
                     type: "text",
-                    text: msg.content
-                  }
-                ]
+                    text: msg.content,
+                  },
+                ],
               };
             }
             return msg;
           });
         }
 
-
         // start receiving server sent events
         let gottenFirstChunk = false;
-        for await (
-          const chunk of this.openaiChatCompletion(this.cstate.selectedModel, apiMessages)
-        ) {
+        for await (const chunk of this.openaiChatCompletion(
+          this.cstate.selectedModel,
+          apiMessages
+        )) {
           if (!gottenFirstChunk) {
             this.cstate.messages.push({ role: "assistant", content: "" });
             gottenFirstChunk = true;
           }
 
           // add chunk to the last message
-          this.cstate.messages[this.cstate.messages.length - 1].content += chunk;
+          this.cstate.messages[this.cstate.messages.length - 1].content +=
+            chunk;
 
           // calculate performance tracking
           tokens += 1;
@@ -202,20 +173,27 @@ document.addEventListener("alpine:init", () => {
 
         // Clean the cstate before adding it to histories
         const cleanedCstate = JSON.parse(JSON.stringify(this.cstate));
-        cleanedCstate.messages = cleanedCstate.messages.map(msg => {
+        cleanedCstate.messages = cleanedCstate.messages.map((msg) => {
           if (Array.isArray(msg.content)) {
             return {
               ...msg,
-              content: msg.content.map(item =>
-                item.type === 'image_url' ? { type: 'image_url', image_url: { url: '[IMAGE_PLACEHOLDER]' } } : item
-              )
+              content: msg.content.map((item) =>
+                item.type === "image_url"
+                  ? {
+                      type: "image_url",
+                      image_url: { url: "[IMAGE_PLACEHOLDER]" },
+                    }
+                  : item
+              ),
             };
           }
           return msg;
         });
 
         // Update the state in histories or add it if it doesn't exist
-        const index = this.histories.findIndex((cstate) => cstate.time === cleanedCstate.time);
+        const index = this.histories.findIndex(
+          (cstate) => cstate.time === cleanedCstate.time
+        );
         cleanedCstate.time = Date.now();
         if (index !== -1) {
           // Update the existing entry
@@ -224,7 +202,7 @@ document.addEventListener("alpine:init", () => {
           // Add a new entry
           this.histories.push(cleanedCstate);
         }
-        console.log(this.histories)
+        console.log(this.histories);
         // update in local storage
         try {
           localStorage.setItem("histories", JSON.stringify(this.histories));
@@ -232,12 +210,12 @@ document.addEventListener("alpine:init", () => {
           console.error("Failed to save histories to localStorage:", error);
         }
       } catch (error) {
-        console.error('error', error)
+        console.error("error", error);
         this.lastErrorMessage = error;
         this.errorMessage = error;
         setTimeout(() => {
           this.errorMessage = null;
-        }, 5 * 1000)
+        }, 5 * 1000);
       } finally {
         this.generating = false;
       }
@@ -256,36 +234,43 @@ document.addEventListener("alpine:init", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages }),
-      }).then((response) => response.json()).then((data) => {
-        this.total_tokens = data.length;
-      }).catch(console.error);
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          this.total_tokens = data.length;
+        })
+        .catch(console.error);
     },
 
     async *openaiChatCompletion(model, messages) {
       // stream response
-      console.log("model", model)
+      console.log("model", model);
       const response = await fetch(`${this.endpoint}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          "model": model,
-          "messages": messages,
-          "stream": true,
+          model: model,
+          messages: messages,
+          stream: true,
         }),
       });
       if (!response.ok) {
-        const errorResBody = await response.json()
+        const errorResBody = await response.json();
         if (errorResBody?.detail) {
-          throw new Error(`Failed to fetch completions: ${errorResBody.detail}`);
+          throw new Error(
+            `Failed to fetch completions: ${errorResBody.detail}`
+          );
         } else {
           throw new Error("Failed to fetch completions: Unknown error");
         }
       }
 
-      const reader = response.body.pipeThrough(new TextDecoderStream())
-        .pipeThrough(new EventSourceParserStream()).getReader();
+      const reader = response.body
+        .pipeThrough(new TextDecoderStream())
+        .pipeThrough(new EventSourceParserStream())
+        .getReader();
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
@@ -303,75 +288,62 @@ document.addEventListener("alpine:init", () => {
         }
       }
     },
-
-    async fetchDownloadProgress() {
-      try {
-        const response = await fetch(`${this.endpoint}/download/progress`);
-        if (response.ok) {
-          const data = await response.json();
-          const progressArray = Object.values(data);
-          if (progressArray.length > 0) {
-            const progress = progressArray[0];
-            // Check if download is complete
-            if (progress.status === "complete" || progress.status === "failed") {
-              this.downloadProgress = null; // Hide the progress section
-
-              if (progress.status === "complete") {
-                // Download is complete
-                // Check for pendingMessage
-                const savedMessage = localStorage.getItem("pendingMessage");
-                if (savedMessage) {
-                  // Clear pendingMessage
-                  localStorage.removeItem("pendingMessage");
-                  // Call processMessage() with savedMessage
-                  if (this.lastErrorMessage) {
-                    await this.processMessage(savedMessage);
-                  }
-                }
-                this.lastErrorMessage = null;
-              }
-            } else {
-              // Compute human-readable strings
-              progress.downloaded_bytes_display = this.formatBytes(progress.downloaded_bytes);
-              progress.total_bytes_display = this.formatBytes(progress.total_bytes);
-              progress.overall_speed_display = progress.overall_speed ? this.formatBytes(progress.overall_speed) + '/s' : '';
-              progress.overall_eta_display = progress.overall_eta ? this.formatDuration(progress.overall_eta) : '';
-              progress.percentage = ((progress.downloaded_bytes / progress.total_bytes) * 100).toFixed(2);
-
-              this.downloadProgress = progress;
-            }
-          } else {
-            // No ongoing download
-            this.downloadProgress = null;
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching download progress:", error);
-        this.downloadProgress = null;
-      }
-    },
-
-    startDownloadProgressPolling() {
-      if (this.downloadProgressInterval) {
-        // Already polling
-        return;
-      }
-      this.fetchDownloadProgress(); // Fetch immediately
-      this.downloadProgressInterval = setInterval(() => {
-        this.fetchDownloadProgress();
-      }, 1000); // Poll every second
-    },
   }));
+
+  const wsClient = new WebSocketClient();
+
+  function downloadEventHandler(message) {
+    const { progress } = message;
+
+    const { status } = progress;
+    if (status === `in_progress`) {
+      const { overall_eta, overall_speed, percentage, repo_id, current_size } =
+        progress;
+      Alpine.store("downloadState").eta = overall_eta;
+      Alpine.store("downloadState").speed = overall_speed;
+      Alpine.store("downloadState").percentage = percentage;
+      Alpine.store("downloadState").currentSize = current_size;
+
+      if (!Alpine.store("downloadState").downloadStarted) {
+        Alpine.store("downloadState").downloadStarted = true;
+      }
+      Alpine.store("downloadState").downloadComplete = false;
+      Alpine.store("downloadState").repoId = repo_id;
+    } else if (status === `complete`) {
+      Alpine.store("downloadState").downloadComplete = true;
+      Alpine.store("downloadState").showSuccess = true;
+    }
+  }
+  Alpine.store("downloadState", {
+    downloadStarted: false,
+    speed: "",
+    eta: "",
+    percentage: "0%",
+    downloadComplete: false,
+    currentSize: "",
+    repoId: "",
+    downloadEventHandle: null,
+    showSuccess: false,
+
+    init() {
+      this.downloadEventHandle = wsClient.registerEvent(
+        `download_progress`,
+        downloadEventHandler
+      );
+    },
+  });
 });
 
 const { markedHighlight } = globalThis.markedHighlight;
-marked.use(markedHighlight({
-  langPrefix: "hljs language-",
-  highlight(code, lang, _info) {
-    const language = hljs.getLanguage(lang) ? lang : "plaintext";
-    return hljs.highlight(code, { language }).value;
-  },
-}));
+marked.use(
+  markedHighlight({
+    langPrefix: "hljs language-",
+    highlight(code, lang, _info) {
+      const language = hljs.getLanguage(lang) ? lang : "plaintext";
+      return hljs.highlight(code, { language }).value;
+    },
+  })
+);
 
 // **** eventsource-parser ****
 class EventSourceParserStream extends TransformStream {
@@ -487,7 +459,7 @@ function createParser(onParse) {
     const noValue = fieldLength < 0;
     const field = lineBuffer.slice(
       index,
-      index + (noValue ? lineLength : fieldLength),
+      index + (noValue ? lineLength : fieldLength)
     );
     let step = 0;
     if (noValue) {
@@ -520,4 +492,45 @@ function createParser(onParse) {
 const BOM = [239, 187, 191];
 function hasBom(buffer) {
   return BOM.every((charCode, index) => buffer.charCodeAt(index) === charCode);
+}
+
+class WebSocketClient {
+  #endpoint = `${window.location.origin}/ws`;
+  #events = {};
+  #ws;
+
+  constructor() {
+    this.#ws = new WebSocket(this.#endpoint);
+
+    this.#ws.onmessage = (event) => {
+      let message = JSON.parse(event.data);
+
+      if (typeof message === "string") message = JSON.parse(message);
+
+      this.onMessage(message);
+    };
+  }
+
+  async onMessage(message) {
+    const type = message.type;
+    if (this.#events[type]) {
+      this.#events[type].forEach((f) => {
+        f(message); // call all listeners
+      });
+    }
+  }
+
+  registerEvent(eventName, f) {
+    if (!this.#events[eventName]) {
+      this.#events[eventName] = [];
+    }
+
+    this.#events[eventName].push(f);
+
+    return {
+      remove: () => {
+        this.#events[eventName][this.#events[eventName].indexOf(f)] = undefined;
+      },
+    };
+  }
 }
