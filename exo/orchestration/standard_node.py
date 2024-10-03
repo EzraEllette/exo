@@ -10,7 +10,11 @@ from exo.inference.inference_engine import InferenceEngine, Shard
 from .node import Node
 from exo.topology.topology import Topology
 from exo.topology.device_capabilities import device_capabilities
-from exo.topology.partitioning_strategy import Partition, PartitioningStrategy, map_partitions_to_shards
+from exo.topology.partitioning_strategy import (
+  Partition,
+  PartitioningStrategy,
+  map_partitions_to_shards,
+)
 from exo import DEBUG
 from exo.helpers import AsyncCallbackSystem
 from exo.viz.topology_viz import TopologyViz
@@ -43,13 +47,15 @@ class StandardNode(Node):
     self._on_opaque_status = AsyncCallbackSystem[str, Tuple[str, str]]()
     self._on_opaque_status.register("node_status").on_next(self.on_node_status)
     self.node_download_progress: Dict[str, RepoProgressEvent] = {}
+    self._on_download_progress = AsyncCallbackSystem[str, Tuple[str, str]]()
 
   async def start(self, wait_for_peers: int = 0) -> None:
     await self.server.start()
     await self.discovery.start()
     await self.update_peers(wait_for_peers)
     await self.collect_topology()
-    if DEBUG >= 2: print(f"Collected topology: {self.topology}")
+    if DEBUG >= 2:
+      print(f"Collected topology: {self.topology}")
     asyncio.create_task(self.periodic_topology_collection(1.0))
 
   async def stop(self) -> None:
@@ -63,20 +69,36 @@ class StandardNode(Node):
         if status_data.get("status", "").startswith("start_"):
           self.current_topology.active_node_id = status_data.get("node_id")
         elif status_data.get("status", "").startswith("end_"):
-          if status_data.get("node_id") == self.current_topology.active_node_id:
+          if (status_data.get("node_id") == self.current_topology.active_node_id):
             self.current_topology.active_node_id = None
       download_progress = None
       if status_data.get("type", "") == "download_progress":
-        if DEBUG >= 8: print(f"Download progress from {status_data.get('node_id')}: {status_data.get('progress')}")
-        download_progress = RepoProgressEvent.from_dict(status_data.get('progress'))
-        self.node_download_progress[status_data.get('node_id')] = download_progress
+        if DEBUG >= 8:
+          print(f"Download progress from {status_data.get('node_id')}: {status_data.get('progress')}")
+        download_progress = RepoProgressEvent.from_dict(status_data.get("progress"))
+        self.node_download_progress[status_data.get("node_id")] = (download_progress)
+        self._on_download_progress.trigger_all()
       if self.topology_viz:
-        self.topology_viz.update_visualization(self.current_topology, self.partitioning_strategy.partition(self.current_topology), self.id, self.node_download_progress)
+        self.topology_viz.update_visualization(
+          self.current_topology,
+          self.partitioning_strategy.partition(self.current_topology),
+          self.id,
+          self.node_download_progress,
+        )
     except Exception as e:
-      if DEBUG >= 1: print(f"Error updating visualization: {e}")
-      if DEBUG >= 1: traceback.print_exc()
+      if DEBUG >= 1:
+        print(f"Error updating visualization: {e}")
+      if DEBUG >= 1:
+        traceback.print_exc()
 
-  async def process_prompt(self, base_shard: Shard, prompt: str, image_str: Optional[str] = None, request_id: Optional[str] = None, inference_state: Optional[str] = None) -> Optional[np.ndarray]:
+  async def process_prompt(
+    self,
+    base_shard: Shard,
+    prompt: str,
+    image_str: Optional[str] = None,
+    request_id: Optional[str] = None,
+    inference_state: Optional[str] = None,
+  ) -> Optional[np.ndarray]:
     shard = self.get_current_shard(base_shard)
     asyncio.create_task(
       self.broadcast_opaque_status(
@@ -118,35 +140,60 @@ class StandardNode(Node):
     )
     return resp
 
-  async def _process_prompt(self, base_shard: Shard, prompt: str, image_str: Optional[str] = None, request_id: Optional[str] = None, inference_state: Optional[str] = None) -> Optional[np.ndarray]:
+  async def _process_prompt(
+    self,
+    base_shard: Shard,
+    prompt: str,
+    image_str: Optional[str] = None,
+    request_id: Optional[str] = None,
+    inference_state: Optional[str] = None,
+  ) -> Optional[np.ndarray]:
     if request_id is None:
       request_id = str(uuid.uuid4())
     if request_id not in self.buffered_token_output:
       self.buffered_token_output[request_id] = ([], False)
     shard = self.get_current_shard(base_shard)
 
-    if DEBUG >= 2: print(f"[{request_id}] process prompt: {base_shard=} {shard=} {prompt=} {image_str=}")
+    if DEBUG >= 2:
+      print(f"[{request_id}] process prompt: {base_shard=} {shard=} {prompt=} {image_str=}")
     if shard.start_layer != 0:
-      if DEBUG >= 2: print(f"[{request_id}] forwarding to next shard: {base_shard=} {shard=} {prompt=} {image_str=}")
-      await self.forward_to_next_shard(shard, prompt, request_id, image_str=image_str, inference_state=inference_state)
+      if DEBUG >= 2:
+        print(f"[{request_id}] forwarding to next shard: {base_shard=} {shard=} {prompt=} {image_str=}")
+      await self.forward_to_next_shard(
+        shard,
+        prompt,
+        request_id,
+        image_str=image_str,
+        inference_state=inference_state,
+      )
       return
 
     result, inference_state, is_finished = await self.inference_engine.infer_prompt(request_id, shard, prompt, image_str, inference_state=inference_state)
-    is_finished = is_finished or len(self.buffered_token_output[request_id][0]) >= self.max_generate_tokens
+    is_finished = (is_finished or len(self.buffered_token_output[request_id][0]) >= self.max_generate_tokens)
     if is_finished:
-      self.buffered_token_output[request_id] = (self.buffered_token_output[request_id][0], True)
+      self.buffered_token_output[request_id] = (
+        self.buffered_token_output[request_id][0],
+        True,
+      )
     asyncio.create_task(self.broadcast_result(request_id, self.buffered_token_output[request_id][0], is_finished))  # TODO: this is n^2 communication complexity
 
     if result.size == 1:
       self.buffered_token_output[request_id][0].append(result.item())
       self.trigger_on_token_callbacks(request_id, self.buffered_token_output[request_id][0], is_finished)
 
-    if DEBUG >= 2: print(f"[{request_id}] result size: {result.size}, is finished: {is_finished}, buffered tokens: {len(self.buffered_token_output[request_id][0])}")
+    if DEBUG >= 2:
+      print(f"[{request_id}] result size: {result.size}, is finished: {is_finished}, buffered tokens: {len(self.buffered_token_output[request_id][0])}")
 
     if not is_finished:
-      asyncio.create_task(self.forward_to_next_shard(shard, result, request_id, image_str=image_str, inference_state=inference_state))
+      asyncio.create_task(self.forward_to_next_shard(
+        shard,
+        result,
+        request_id,
+        image_str=image_str,
+        inference_state=inference_state,
+      ))
 
-    return np.array(self.buffered_token_output[request_id][0]) if len(self.buffered_token_output[request_id][0]) > 0 else None
+    return (np.array(self.buffered_token_output[request_id][0]) if len(self.buffered_token_output[request_id][0]) > 0 else None)
 
   async def process_tensor(
     self,
@@ -207,22 +254,27 @@ class StandardNode(Node):
     shard = self.get_current_shard(base_shard)
 
     try:
-      if DEBUG >= 1: print(f"[{request_id}] process_tensor: {tensor.size=} {tensor.shape=}")
-      result, inference_state, is_finished = await self.inference_engine.infer_tensor(request_id, shard, tensor, inference_state=inference_state)
-      is_finished = is_finished or len(self.buffered_token_output[request_id][0]) >= self.max_generate_tokens
+      if DEBUG >= 1:
+        print(f"[{request_id}] process_tensor: {tensor.size=} {tensor.shape=}")
+      result, inference_state, is_finished = (await self.inference_engine.infer_tensor(request_id, shard, tensor, inference_state=inference_state))
+      is_finished = (is_finished or len(self.buffered_token_output[request_id][0]) >= self.max_generate_tokens)
       if is_finished:
-        self.buffered_token_output[request_id] = (self.buffered_token_output[request_id][0], True)
+        self.buffered_token_output[request_id] = (
+          self.buffered_token_output[request_id][0],
+          True,
+        )
       asyncio.create_task(self.broadcast_result(request_id, self.buffered_token_output[request_id][0], is_finished))  # TODO: this is n^2 communication complexity
 
       if result.size == 1:  # we got a new token out
         self.buffered_token_output[request_id][0].append(result.item())
         self.trigger_on_token_callbacks(request_id, self.buffered_token_output[request_id][0], is_finished)
-      if DEBUG >= 2: print(f"[{request_id}] result size: {result.size}, is finished: {is_finished}, buffered tokens: {len(self.buffered_token_output[request_id][0])}")
+      if DEBUG >= 2:
+        print(f"[{request_id}] result size: {result.size}, is finished: {is_finished}, buffered tokens: {len(self.buffered_token_output[request_id][0])}")
 
       if not is_finished:
         asyncio.create_task(self.forward_to_next_shard(shard, result, request_id, inference_state=inference_state))
 
-      return np.array(self.buffered_token_output[request_id][0]) if len(self.buffered_token_output[request_id][0]) > 0 else None
+      return (np.array(self.buffered_token_output[request_id][0]) if len(self.buffered_token_output[request_id][0]) > 0 else None)
     except Exception as e:
       print(f"Error processing tensor for shard {shard}: {e}")
       traceback.print_exc()
@@ -237,37 +289,67 @@ class StandardNode(Node):
     inference_state: Optional[str] = None,
   ) -> None:
     if not self.partitioning_strategy:
-      if DEBUG >= 1: print("No partitioning strategy found. Skipping forward.")
+      if DEBUG >= 1:
+        print("No partitioning strategy found. Skipping forward.")
       return
     shard = self.get_current_shard(base_shard)
 
     partitions = self.partitioning_strategy.partition(self.topology)
-    shards = map_partitions_to_shards(self.partitioning_strategy.partition(self.topology), base_shard.n_layers, base_shard.model_id)
+    shards = map_partitions_to_shards(
+      self.partitioning_strategy.partition(self.topology),
+      base_shard.n_layers,
+      base_shard.model_id,
+    )
     current_partition_index = next((i for i, p in enumerate(partitions) if p.node_id == self.id), None)
-    if DEBUG >= 1: print(f"Current partition index: {current_partition_index}")
+    if DEBUG >= 1:
+      print(f"Current partition index: {current_partition_index}")
     if current_partition_index is not None:
       next_partition_index = (current_partition_index+1) % len(partitions)
       next_partition: Partition = partitions[next_partition_index]
       next_shard = shards[next_partition_index]
-      if DEBUG >= 2: print(f"Computed next from: {shard}, {self.topology}. Next partition: {next_partition}")
+      if DEBUG >= 2:
+        print(f"Computed next from: {shard}, {self.topology}. Next partition: {next_partition}")
 
       if next_partition.node_id == self.id:
         if isinstance(tensor_or_prompt, np.ndarray):
-          await self.process_tensor(shard, tensor_or_prompt, request_id, inference_state=inference_state)
+          await self.process_tensor(
+            shard,
+            tensor_or_prompt,
+            request_id,
+            inference_state=inference_state,
+          )
         else:
-          await self.process_prompt(shard, tensor_or_prompt, image_str, request_id, inference_state=inference_state)
+          await self.process_prompt(
+            shard,
+            tensor_or_prompt,
+            image_str,
+            request_id,
+            inference_state=inference_state,
+          )
         return
 
       target_peer = next((p for p in self.peers if p.id() == next_partition.node_id), None)
       if not target_peer:
         raise ValueError(f"Peer for {next_partition} not found")
 
-      if DEBUG >= 1: print(f"Sending tensor_or_prompt to {target_peer.id()}: {tensor_or_prompt}")
+      if DEBUG >= 1:
+        print(f"Sending tensor_or_prompt to {target_peer.id()}: {tensor_or_prompt}")
 
       if isinstance(tensor_or_prompt, np.ndarray):
-        await target_peer.send_tensor(next_shard, tensor_or_prompt, request_id=request_id, inference_state=inference_state)
+        await target_peer.send_tensor(
+          next_shard,
+          tensor_or_prompt,
+          request_id=request_id,
+          inference_state=inference_state,
+        )
       else:
-        await target_peer.send_prompt(next_shard, tensor_or_prompt, image_str=image_str, request_id=request_id, inference_state=inference_state)
+        await target_peer.send_prompt(
+          next_shard,
+          tensor_or_prompt,
+          image_str=image_str,
+          request_id=request_id,
+          inference_state=inference_state,
+        )
 
   def get_current_shard(self, base_shard: Shard) -> Shard:
     partitions = self.partitioning_strategy.partition(self.topology)
@@ -283,20 +365,16 @@ class StandardNode(Node):
     next_peer_ids = {peer.id() for peer in next_peers}
     peers_added = [peer for peer in next_peers if peer.id() not in current_peer_ids]
     peers_removed = [peer for peer in self.peers if peer.id() not in next_peer_ids]
-    peers_updated = [
-      peer for peer in next_peers
-      if peer.id() in current_peer_ids and any(p.addr() != peer.addr() for p in self.peers if p.id() == peer.id())
-    ]
-    peers_unchanged = [
-      peer for peer in next_peers
-      if peer.id() in current_peer_ids and all(p.addr() == peer.addr() for p in self.peers if p.id() == peer.id())
-    ]
+    peers_updated = [peer for peer in next_peers if peer.id() in current_peer_ids and any(p.addr() != peer.addr() for p in self.peers if p.id() == peer.id())]
+    peers_unchanged = [peer for peer in next_peers if peer.id() in current_peer_ids and all(p.addr() == peer.addr() for p in self.peers if p.id() == peer.id())]
     peers_to_disconnect = [peer for peer in peers_removed if await peer.is_connected()]
     peers_to_connect = [peer for peer in peers_added + peers_updated + peers_unchanged if not await peer.is_connected()]
 
     def _pretty(peers: List[PeerHandle]) -> List[str]:
       return [f"{peer.id()}@{peer.addr()}" for peer in peers]
-    if DEBUG >= 2: print(f"update_peers: added={peers_added} removed={peers_removed} updated={peers_updated} unchanged={peers_unchanged} to_disconnect={peers_to_disconnect} to_connect={peers_to_connect}")
+
+    if DEBUG >= 2:
+      print(f"update_peers: added={peers_added} removed={peers_removed} updated={peers_updated} unchanged={peers_unchanged} to_disconnect={peers_to_disconnect} to_connect={peers_to_connect}")
 
     async def disconnect_with_timeout(peer, timeout=5):
       try:
@@ -318,11 +396,11 @@ class StandardNode(Node):
 
     disconnect_results = await asyncio.gather(
       *(disconnect_with_timeout(peer) for peer in peers_to_disconnect),
-      return_exceptions=True
+      return_exceptions=True,
     )
     connect_results = await asyncio.gather(
       *(connect_with_timeout(peer) for peer in peers_to_connect),
-      return_exceptions=True
+      return_exceptions=True,
     )
 
     successful_disconnects = [peer for peer, result in zip(peers_to_disconnect, disconnect_results) if result is True]
@@ -330,10 +408,14 @@ class StandardNode(Node):
     successful_connects = [peer for peer, result in zip(peers_to_connect, connect_results) if result is True]
     failed_connects = [peer for peer, result in zip(peers_to_connect, connect_results) if result is False]
     if DEBUG >= 1:
-      if successful_disconnects: print(f"Successfully disconnected peers: {_pretty(successful_disconnects)}")
-      if failed_disconnects: print(f"Failed to disconnect peers: {_pretty(failed_disconnects)}")
-      if successful_connects: print(f"Successfully connected peers: {_pretty(successful_connects)}")
-      if failed_connects: print(f"Failed to connect peers: {_pretty(failed_connects)}")
+      if successful_disconnects:
+        print(f"Successfully disconnected peers: {_pretty(successful_disconnects)}")
+      if failed_disconnects:
+        print(f"Failed to disconnect peers: {_pretty(failed_disconnects)}")
+      if successful_connects:
+        print(f"Successfully connected peers: {_pretty(successful_connects)}")
+      if failed_connects:
+        print(f"Failed to connect peers: {_pretty(failed_connects)}")
 
     self.peers = next_peers
     return len(peers_added) > 0 or len(peers_removed) > 0 or len(peers_updated) > 0
@@ -343,7 +425,8 @@ class StandardNode(Node):
       await asyncio.sleep(interval)
       try:
         did_peers_change = await self.update_peers()
-        if DEBUG >= 2: print(f"{did_peers_change=}")
+        if DEBUG >= 2:
+          print(f"{did_peers_change=}")
         if did_peers_change:
           await self.collect_topology()
       except Exception as e:
@@ -353,13 +436,17 @@ class StandardNode(Node):
   async def get_inference_result(self, request_id: str) -> Tuple[Optional[np.ndarray], bool]:
     if request_id not in self.buffered_token_output:
       return None, False
-    return np.array(self.buffered_token_output[request_id][0]), self.buffered_token_output[request_id][1]
+    return (
+      np.array(self.buffered_token_output[request_id][0]),
+      self.buffered_token_output[request_id][1],
+    )
 
   async def collect_topology(self, visited: set[str] = set(), max_depth: int = 4) -> Topology:
     next_topology = Topology()
     next_topology.update_node(self.id, self.device_capabilities)
 
-    if DEBUG >= 2: print(f"Collecting topology {max_depth=} {visited=}")
+    if DEBUG >= 2:
+      print(f"Collecting topology {max_depth=} {visited=}")
 
     prev_visited = visited.copy()
     visited.add(self.id)
@@ -373,20 +460,26 @@ class StandardNode(Node):
         continue
 
       if max_depth <= 0:
-        if DEBUG >= 2: print("Max depth reached. Skipping...")
+        if DEBUG >= 2:
+          print("Max depth reached. Skipping...")
         continue
 
       try:
         other_topology = await asyncio.wait_for(peer.collect_topology(visited, max_depth=max_depth - 1), timeout=5.0)
-        if DEBUG >= 2: print(f"Collected topology from: {peer.id()}: {other_topology}")
+        if DEBUG >= 2:
+          print(f"Collected topology from: {peer.id()}: {other_topology}")
         self.topology.merge(other_topology)
       except Exception as e:
         print(f"Error collecting topology from {peer.id()}: {e}")
 
-    next_topology.active_node_id = self.topology.active_node_id  # this is not so clean.
+    next_topology.active_node_id = (self.topology.active_node_id)  # this is not so clean.
     self.topology = next_topology
     if self.topology_viz:
-      self.topology_viz.update_visualization(self.current_topology, self.partitioning_strategy.partition(self.current_topology), self.id)
+      self.topology_viz.update_visualization(
+        self.current_topology,
+        self.partitioning_strategy.partition(self.current_topology),
+        self.id,
+      )
     return next_topology
 
   @property
@@ -398,7 +491,8 @@ class StandardNode(Node):
     return self._on_opaque_status
 
   def trigger_on_token_callbacks(self, request_id: str, tokens: List[int], is_finished: bool) -> None:
-    if DEBUG >= 2: print(f"Triggering all on_token callbacks with {request_id=} num_tokens={len(tokens)} {is_finished=}")
+    if DEBUG >= 2:
+      print(f"Triggering all on_token callbacks with {request_id=} num_tokens={len(tokens)} {is_finished=}")
     self.on_token.trigger_all(request_id, tokens, is_finished)
 
   async def broadcast_result(self, request_id: str, result: List[int], is_finished: bool) -> None:
@@ -414,7 +508,8 @@ class StandardNode(Node):
     await asyncio.gather(*[send_result_to_peer(peer) for peer in self.peers], return_exceptions=True)
 
   async def broadcast_opaque_status(self, request_id: str, status: str) -> None:
-    if DEBUG >= 8: print(f"Broadcasting opaque status: {request_id=} {status=}")
+    if DEBUG >= 8:
+      print(f"Broadcasting opaque status: {request_id=} {status=}")
 
     async def send_status_to_peer(peer):
       try:

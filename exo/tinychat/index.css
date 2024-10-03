@@ -9,7 +9,7 @@
   --green-color: #228039;
   --silver-color: #88808e;
 }
-@media(prefers-color-scheme: light) {
+@media (prefers-color-scheme: light) {
   :root {
     --primary-bg-color: #f0f0f0;
     --secondary-bg-color: #eeeeee;
@@ -18,7 +18,7 @@
     --accent-color: #000000;
   }
 }
-@media(prefers-color-scheme: dark) {
+@media (prefers-color-scheme: dark) {
   :root {
     --primary-bg-color: #111111;
     --secondary-bg-color: #131313;
@@ -81,7 +81,11 @@ main {
   top: 0;
   position: absolute;
 
-  background: linear-gradient(180deg, var(--primary-bg-color) 0%, transparent 100%);
+  background: linear-gradient(
+    180deg,
+    var(--primary-bg-color) 0%,
+    transparent 100%
+  );
 }
 .histories-end {
   height: 3rem;
@@ -91,7 +95,11 @@ main {
   bottom: 0;
   position: absolute;
 
-  background: linear-gradient(0deg, var(--primary-bg-color) 0%, transparent 100%);
+  background: linear-gradient(
+    0deg,
+    var(--primary-bg-color) 0%,
+    transparent 100%
+  );
 }
 
 .history {
@@ -172,17 +180,17 @@ main {
 }
 
 .toast {
-    width: 100%; /* Take up the full width of the page */
-    background-color: #fc2a2a; /* Dark background color */
-    color: #fff; /* White text color */
-    text-align: center; /* Centered text */
-    border-radius: 2px; /* Rounded borders */
-    padding: 16px; /* Padding */
-    position: fixed; /* Sit on top of the screen content */
-    z-index: 9999; /* Add a z-index if needed */
-    top: 0; /* Position at the top of the page */
-    left: 0; /* Extend from the left edge */
-    right: 0; /* Extend to the right edge */
+  width: 100%; /* Take up the full width of the page */
+  background-color: #fc2a2a; /* Dark background color */
+  color: #fff; /* White text color */
+  text-align: center; /* Centered text */
+  border-radius: 2px; /* Rounded borders */
+  padding: 16px; /* Padding */
+  position: fixed; /* Sit on top of the screen content */
+  z-index: 9999; /* Add a z-index if needed */
+  top: 0; /* Position at the top of the page */
+  left: 0; /* Extend from the left edge */
+  right: 0; /* Extend to the right edge */
 }
 
 .hljs {
@@ -217,7 +225,11 @@ main {
   bottom: 0;
 
   /* linear gradient from background-color to transparent on the top */
-  background: linear-gradient(0deg, var(--primary-bg-color) 55%, transparent 100%);
+  background: linear-gradient(
+    0deg,
+    var(--primary-bg-color) 55%,
+    transparent 100%
+  );
 
   width: 100%;
   display: flex;
@@ -324,7 +336,7 @@ p {
 .model-selector select:focus {
   outline: none;
   border-color: #007bff;
-  box-shadow: 0 0 0 2px rgba(0,123,255,.25);
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
 }
 
 /* Image upload button styles */
@@ -395,4 +407,57 @@ p {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+#download-toast {
+  position: fixed;
+  top: 20px; /* Distance from the top of the page */
+  right: 20px; /* Distance from the right of the page */
+  width: 300px; /* Adjust as needed */
+  background-color: var(--primary-bg-color); /* White background */
+  border: 1px solid var(--silver-color); /* Light border */
+  border-radius: 8px; /* Rounded corners */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+  padding: 16px; /* Inner padding */
+  z-index: 1000; /* Ensure it's above other elements */
+}
+
+#download-toast h3 {
+  margin: 0;
+  font-size: 1.1em;
+}
+
+/* Progress Bar Container */
+.progress-bar {
+  width: 100%;
+  background-color: var(--tertiary-bg-color);
+  border-radius: 25px;
+  overflow: hidden;
+  height: 25px;
+  margin-top: 10px;
+}
+
+/* Progress Bar Fill */
+.progress-bar-fill {
+  height: 100%;
+  background-color: var(--green-color);
+  width: 0; /* This will be dynamically updated by Alpine */
+  transition: width 0.3s ease-in-out;
+}
+
+#success_toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 300px;
+  background-color: var(--green-color); /* Green background for success */
+  color: white; /* White text */
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+}
+
+[x-cloak] {
+  display: none !important;
 }

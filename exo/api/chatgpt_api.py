@@ -5,13 +5,11 @@ import json
 from pathlib import Path
 from transformers import AutoTokenizer
 from typing import List, Literal, Union, Dict
-from aiohttp import web
+from aiohttp import WSCloseCode, WSMsgType, web
 import aiohttp_cors
 import traceback
 from exo import DEBUG, VERSION
-from exo.download.download_progress import RepoProgressEvent
 from exo.helpers import PrefixDict
-from exo.inference.shard import Shard
 from exo.inference.tokenizers import resolve_tokenizer
 from exo.orchestration import Node
 from exo.models import model_base_shards
@@ -19,7 +17,11 @@ from typing import Callable
 
 
 class Message:
-  def __init__(self, role: str, content: Union[str, List[Dict[str, Union[str, Dict[str, str]]]]]):
+  def __init__(
+    self,
+    role: str,
+    content: Union[str, List[Dict[str, Union[str, Dict[str, str]]]]],
+  ):
     self.role = role
     self.content = content
 
@@ -34,7 +36,11 @@ class ChatCompletionRequest:
     self.temperature = temperature
 
   def to_dict(self):
-    return {"model": self.model, "messages": [message.to_dict() for message in self.messages], "temperature": self.temperature}
+    return {
+      "model": self.model,
+      "messages": [message.to_dict() for message in self.messages],
+      "temperature": self.temperature,
+    }
 
 
 def generate_completion(
@@ -95,7 +101,10 @@ def remap_messages(messages: List[Message]) -> List[Message]:
           image_url = content.get("image_url", {}).get("url") or content.get("image")
           if image_url:
             last_image = {"type": "image", "image": image_url}
-            remapped_content.append({"type": "text", "text": "[An image was uploaded but is not displayed here]"})
+            remapped_content.append({
+              "type": "text",
+              "text": "[An image was uploaded but is not displayed here]",
+            })
         else:
           remapped_content.append(content)
       else:
@@ -107,7 +116,7 @@ def remap_messages(messages: List[Message]) -> List[Message]:
     for message in reversed(remapped_messages):
       for i, content in enumerate(message.content):
         if isinstance(content, dict):
-          if content.get("type") == "text" and content.get("text") == "[An image was uploaded but is not displayed here]":
+          if (content.get("type") == "text" and content.get("text") == "[An image was uploaded but is not displayed here]"):
             message.content[i] = last_image
             return remapped_messages
 
@@ -154,7 +163,13 @@ class PromptSession:
 
 
 class ChatGPTAPI:
-  def __init__(self, node: Node, inference_engine_classname: str, response_timeout: int = 90, on_chat_completion_request: Callable[[str, ChatCompletionRequest, str], None] = None):
+  def __init__(
+    self,
+    node: Node,
+    inference_engine_classname: str,
+    response_timeout: int = 90,
+    on_chat_completion_request: Callable[[str, ChatCompletionRequest, str], None] = None,
+  ):
     self.node = node
     self.inference_engine_classname = inference_engine_classname
     self.response_timeout = response_timeout
@@ -163,6 +178,9 @@ class ChatGPTAPI:
     self.prompts: PrefixDict[str, PromptSession] = PrefixDict()
     self.prev_token_lens: Dict[str, int] = {}
     self.stream_tasks: Dict[str, asyncio.Task] = {}
+    self.websockets = web.AppKey("websockets", List[web.WebSocketResponse])
+    self.app[self.websockets] = list()
+    self.app.on_shutdown.append(self.close_websockets)
     cors = aiohttp_cors.setup(self.app)
     cors_options = aiohttp_cors.ResourceOptions(
       allow_credentials=True,
@@ -170,13 +188,31 @@ class ChatGPTAPI:
       allow_headers="*",
       allow_methods="*",
     )
-    cors.add(self.app.router.add_get("/models", self.handle_get_models), {"*": cors_options})
-    cors.add(self.app.router.add_get("/v1/models", self.handle_get_models), {"*": cors_options})
-    cors.add(self.app.router.add_post("/chat/token/encode", self.handle_post_chat_token_encode), {"*": cors_options})
-    cors.add(self.app.router.add_post("/v1/chat/token/encode", self.handle_post_chat_token_encode), {"*": cors_options})
-    cors.add(self.app.router.add_post("/chat/completions", self.handle_post_chat_completions), {"*": cors_options})
-    cors.add(self.app.router.add_post("/v1/chat/completions", self.handle_post_chat_completions), {"*": cors_options})
-    cors.add(self.app.router.add_get("/v1/download/progress", self.handle_get_download_progress), {"*": cors_options})
+    cors.add(
+      self.app.router.add_get("/models", self.handle_get_models),
+      {"*": cors_options},
+    )
+    cors.add(
+      self.app.router.add_get("/v1/models", self.handle_get_models),
+      {"*": cors_options},
+    )
+    cors.add(
+      self.app.router.add_post("/chat/token/encode", self.handle_post_chat_token_encode),
+      {"*": cors_options},
+    )
+    cors.add(
+      self.app.router.add_post("/v1/chat/token/encode", self.handle_post_chat_token_encode),
+      {"*": cors_options},
+    )
+    cors.add(
+      self.app.router.add_post("/chat/completions", self.handle_post_chat_completions),
+      {"*": cors_options},
+    )
+    cors.add(
+      self.app.router.add_post("/v1/chat/completions", self.handle_post_chat_completions),
+      {"*": cors_options},
+    )
+    cors.add(self.app.router.add_get("/ws", self.handle_ws), {"*": cors_options})
 
     self.static_dir = Path(__file__).parent.parent / "tinychat"
     self.app.router.add_get("/", self.handle_root)
@@ -186,25 +222,25 @@ class ChatGPTAPI:
     self.app.middlewares.append(self.log_request)
 
   async def timeout_middleware(self, app, handler):
-    async def middleware(request):
-      try:
-        return await asyncio.wait_for(handler(request), timeout=self.response_timeout)
-      except asyncio.TimeoutError:
-        return web.json_response({"detail": "Request timed out"}, status=408)
-    return middleware
+      async def middleware(request):
+          try:
+              return await asyncio.wait_for(handler(request), timeout=self.response_timeout)
+          except asyncio.TimeoutError:
+              return web.json_response({"detail": "Request timed out"}, status=408)
+      return middleware
 
   async def log_request(self, app, handler):
-    async def middleware(request):
-      if DEBUG >= 2: print(f"Received request: {request.method} {request.path}")
-      return await handler(request)
+      async def middleware(request):
+          if DEBUG >= 2: print(f"Received request: {request.method} {request.path}")
+          return await handler(request)
 
-    return middleware
+      return middleware
 
   async def handle_root(self, request):
     return web.FileResponse(self.static_dir/"index.html")
 
   async def handle_get_models(self, request):
-    return web.json_response([{"id": model_name, "object": "model", "owned_by": "exo", "ready": True } for model_name, _ in model_base_shards.items()])
+    return web.json_response([{"id": model_name, "object": "model", "owned_by": "exo", "ready": True} for model_name, _ in model_base_shards.items()])
 
   async def handle_post_chat_token_encode(self, request):
     data = await request.json()
@@ -212,16 +248,6 @@ class ChatGPTAPI:
     messages = [parse_message(msg) for msg in data.get("messages", [])]
     tokenizer = await resolve_tokenizer(shard.model_id)
     return web.json_response({"length": len(build_prompt(tokenizer, messages)[0])})
-
-  async def handle_get_download_progress(self, request):
-    progress_data = {}
-    for node_id, progress_event in self.node.node_download_progress.items():
-      if isinstance(progress_event, RepoProgressEvent):
-        progress_data[node_id] = progress_event.to_dict()
-      else:
-        print(f"Unknown progress event type: {type(progress_event)}. {progress_event}")
-    return web.json_response(progress_data)
-
 
   async def handle_post_chat_completions(self, request):
     data = await request.json()
@@ -348,6 +374,58 @@ class ChatGPTAPI:
     finally:
       deregistered_callback = self.node.on_token.deregister(callback_id)
       if DEBUG >= 2: print(f"Deregister {callback_id=} {deregistered_callback=}")
+
+  async def handle_ws(self, request):
+    ws = web.WebSocketResponse(autoping=True, heartbeat=30)
+
+    ready = ws.can_prepare(request=request)
+
+    if not ready:
+      await ws.close(code=WSCloseCode.PROTOCOL_ERROR)
+
+    await ws.prepare(request)
+
+    request.app[self.websockets].append(ws)
+
+    await ws.send_json({"type": "websocket.accept"})
+
+    async for msg in ws:
+      if msg.type == WSMsgType.ERROR:
+        self.remove_ws(ws)
+        if DEBUG >= 2:
+          print(f"WebSocket error: {ws.exception()}")
+    return ws
+
+  async def broadcast(self, message: str):
+    websockets_to_remove = []
+
+    for ws in self.app[self.websockets]:
+      if ws.closed:
+        websockets_to_remove.append(ws)
+        continue
+
+      try:
+        await ws.send_json(message)
+      except Exception as e:
+        websockets_to_remove.append(ws)
+        if DEBUG >= 2:
+          print(f"Error broadcasting message: {e}")
+        if DEBUG >= 2:
+          traceback.print_exc()
+
+    for ws in websockets_to_remove:
+      self.remove_ws(ws)
+
+  def list_ws(self):
+    return list(self.app[self.websockets])
+
+  async def remove_ws(self, ws):
+    await ws.close()
+    self.app[self.websockets].remove(ws)
+
+  async def close_websockets(self, app):
+    for ws in app[self.websockets]:
+      await ws.close(code=WSCloseCode.GOING_AWAY, message="Server shutdown")
 
   async def run(self, host: str = "0.0.0.0", port: int = 8000):
     runner = web.AppRunner(self.app)
