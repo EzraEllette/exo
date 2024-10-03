@@ -391,7 +391,7 @@ class ChatGPTAPI:
 
     async for msg in ws:
       if msg.type == WSMsgType.ERROR:
-        self.remove_ws(ws)
+        await self.remove_ws(ws)
         if DEBUG >= 2:
           print(f"WebSocket error: {ws.exception()}")
     return ws
@@ -414,7 +414,7 @@ class ChatGPTAPI:
           traceback.print_exc()
 
     for ws in websockets_to_remove:
-      self.remove_ws(ws)
+      await self.remove_ws(ws)
 
   def list_ws(self):
     return list(self.app[self.websockets])
