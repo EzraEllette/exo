@@ -9,7 +9,6 @@ from exo.topology.device_capabilities import DeviceCapabilities, device_capabili
 from exo.helpers import DEBUG, DEBUG_DISCOVERY
 from .tailscale_helpers import get_device_id, update_device_attributes, get_device_attributes, update_device_attributes
 
-
 class TailscaleDiscovery(Discovery):
   def __init__(
     self,
@@ -70,11 +69,14 @@ class TailscaleDiscovery(Discovery):
         devices: dict[str, Device] = await self.tailscale.devices()
         current_time = time.time()
 
-        active_devices = {name: device for name, device in devices.items() if device.last_seen is not None and (current_time - device.last_seen.timestamp()) < 30}
+        active_devices = {
+          name: device for name, device in devices.items()
+          if device.last_seen is not None and (current_time - device.last_seen.timestamp()) < 30
+        }
 
         if DEBUG_DISCOVERY >= 4: print(f"Found tailscale devices: {devices}")
         if DEBUG_DISCOVERY >= 2: print(f"Active tailscale devices: {len(active_devices)}/{len(devices)}")
-        if DEBUG_DISCOVERY >= 2: print("Time since last seen tailscale devices", [(current_time - device.last_seen.timestamp()) for device in devices.values()])
+        if DEBUG_DISCOVERY >= 2: print("Time since last seen tailscale devices", [(current_time  - device.last_seen.timestamp()) for device in devices.values()])
 
         for device in active_devices.values():
           if device.name == self.node_id: continue
@@ -133,16 +135,9 @@ class TailscaleDiscovery(Discovery):
         current_time = time.time()
         peers_to_remove = [
           peer_handle.id() for peer_handle, connected_at, last_seen in self.known_peers.values()
-          if (not await peer_handle.is_connected() and current_time - connected_at > self.discovery_timeout) or current_time -
-          last_seen > self.discovery_timeout or not await peer_handle.health_check()
+          if (not await peer_handle.is_connected() and current_time - connected_at > self.discovery_timeout) or current_time - last_seen > self.discovery_timeout or not await peer_handle.health_check()
         ]
-        if DEBUG_DISCOVERY >= 2:
-          print(
-            "Peer statuses:", {
-              peer_handle.id(): f"is_connected={await peer_handle.is_connected()}, {connected_at=}, {last_seen=}, health_check={await peer_handle.health_check()}"
-              for peer_handle, connected_at, last_seen in self.known_peers.values()
-            }
-          )
+        if DEBUG_DISCOVERY >= 2: print("Peer statuses:", {peer_handle.id(): f"is_connected={await peer_handle.is_connected()}, {connected_at=}, {last_seen=}, health_check={await peer_handle.health_check()}" for peer_handle, connected_at, last_seen in self.known_peers.values()})
         for peer_id in peers_to_remove:
           if peer_id in self.known_peers: del self.known_peers[peer_id]
           if DEBUG_DISCOVERY >= 2: print(f"Removed peer {peer_id} due to inactivity.")

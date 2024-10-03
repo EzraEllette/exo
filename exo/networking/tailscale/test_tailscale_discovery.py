@@ -5,7 +5,6 @@ from unittest import mock
 from exo.networking.tailscale.tailscale_discovery import TailscaleDiscovery
 from exo.networking.peer_handle import PeerHandle
 
-
 class TestTailscaleDiscovery(unittest.IsolatedAsyncioTestCase):
   async def asyncSetUp(self):
     self.tailscale_api_key = os.environ.get("TAILSCALE_API_KEY", "")
@@ -37,7 +36,6 @@ class TestTailscaleDiscovery(unittest.IsolatedAsyncioTestCase):
 
     # Check if discovered peers are instances of GRPCPeerHandle
     print(peers)
-
 
 if __name__ == '__main__':
   unittest.main()

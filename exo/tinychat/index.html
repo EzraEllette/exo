@@ -214,19 +214,5 @@
 </button>
 </div>
 </div>
-<div x-data="$store.downloadState"  x-init="init()">
-  <div id="download-toast" x-cloak x-transition x-show="downloadStarted && !downloadComplete">
-    <h3>Downloading</h3>
-    <p x-text="`${repoId}`"></p>
-    <div class="progress-bar">
-      <div class="progress-bar-fill"
-      :style="'width:' + (Math.floor(percentage.split('%')[0])) + '%'"></div>
-    </div>
-    <p x-text="`${eta} - ${speed} - ${currentSize}`"></p>
-  </div>
-  <div id="success_toast" x-cloak x-transition x-show="showSuccess" x-init="$watch('showSuccess', value => { if (value) { setTimeout(() => showSuccess = false, 3000) } })" class="success-toast">
-    <p>Download Complete!</p>
-  </div>
-</div>
 </main>
 </body>

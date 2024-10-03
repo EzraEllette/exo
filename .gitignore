@@ -170,5 +170,3 @@ cython_debug/
 #.idea/
 
 **/*.xcodeproj/*
-
-.DS_Store

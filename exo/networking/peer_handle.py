@@ -5,7 +5,6 @@ from exo.inference.shard import Shard
 from exo.topology.device_capabilities import DeviceCapabilities
 from exo.topology.topology import Topology
 
-
 class PeerHandle(ABC):
   @abstractmethod
   def id(self) -> str:
