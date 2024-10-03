@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from datetime import timedelta
 import signal
 import json
 import time
@@ -263,7 +264,7 @@ def throttled_broadcast_web():
     downloaded_bytes = 0
     total_bytes = 0
     # show max eta
-    overall_eta = 0
+    overall_eta = timedelta(0)
     # average speed
     overall_speed = 0
     complete_count = 0
