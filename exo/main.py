@@ -305,6 +305,7 @@ def throttled_broadcast_web():
     ))
 
 node._on_download_progress.register("broadcast_web").on_next(throttled_broadcast_web)
+
 async def shutdown(signal, loop):
     """Gracefully shutdown the server and close the asyncio loop."""
     print(f"Received exit signal {signal.name}...")

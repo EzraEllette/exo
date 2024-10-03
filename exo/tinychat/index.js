@@ -328,7 +328,7 @@ document.addEventListener("alpine:init", () => {
 
   function downloadEventHandler(message) {
     const { progress } = message;
-    console.log(message);
+
     const { status } = progress;
     if (status === `in_progress`) {
       const { overall_eta, overall_speed, percentage, repo_id, current_size } =

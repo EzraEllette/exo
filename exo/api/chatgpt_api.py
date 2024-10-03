@@ -481,7 +481,6 @@ class ChatGPTAPI:
         return ws
 
     async def broadcast(self, message: str):
-        print(message)
         websockets_to_remove = []
 
         for ws in self.app[self.websockets]:
