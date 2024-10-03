@@ -5,13 +5,11 @@ import json
 from pathlib import Path
 from transformers import AutoTokenizer
 from typing import List, Literal, Union, Dict
-from aiohttp import WSCloseCode, WSMessage, WSMsgType, web
+from aiohttp import WSCloseCode, WSMsgType, web
 import aiohttp_cors
 import traceback
 from exo import DEBUG, VERSION
-from exo.download.download_progress import RepoProgressEvent
 from exo.helpers import PrefixDict
-from exo.inference.shard import Shard
 from exo.inference.tokenizers import resolve_tokenizer
 from exo.orchestration import Node
 from exo.models import model_base_shards
