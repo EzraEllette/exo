@@ -293,7 +293,7 @@ def throttled_broadcast_web():
 
         eta_str = f"{rounded_eta}"
 
-        current_size = f"{pretty_print_bytes(downloaded_bytes).split(' ')[0]}/{pretty_print_bytes(total_bytes)}"
+        current_size = f"{pretty_print_bytes(downloaded_bytes)} / {pretty_print_bytes(total_bytes)}"
 
         status = "in_progress"
 
