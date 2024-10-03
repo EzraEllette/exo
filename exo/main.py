@@ -385,14 +385,16 @@ async def main():
 
         await asyncio.Event().wait()
 
+def run():
+  loop = asyncio.new_event_loop()
+  asyncio.set_event_loop(loop)
+  try:
+    loop.run_until_complete(main())
+  except KeyboardInterrupt:
+    print("Received keyboard interrupt. Shutting down...")
+  finally:
+    loop.run_until_complete(shutdown(signal.SIGTERM, loop))
+    loop.close()
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(main())
-    except KeyboardInterrupt:
-        print("Received keyboard interrupt. Shutting down...")
-    finally:
-        loop.run_until_complete(shutdown(signal.SIGTERM, loop))
-        loop.close()
+  run()
