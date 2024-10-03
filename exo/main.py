@@ -271,7 +271,6 @@ def throttled_broadcast_web():
     repo_id = ""
 
     for _node_id, progress in node.node_download_progress.items():
-        print(progress)
         if progress.status == "complete":
             complete_count += 1
 
