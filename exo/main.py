@@ -255,54 +255,57 @@ def throttled_broadcast(shard: Shard, event: RepoProgressEvent):
 
 shard_downloader.on_progress.register("broadcast").on_next(throttled_broadcast)
 
+last_web_broadcast_time = 0
+
 def throttled_broadcast_web():
-    # global last_broadcast_time
-    # current_time = time.time()
+    global last_web_broadcast_time
+    current_time = time.time()
 
-    # if current_time - last_broadcast_time >= 0.1:
-    node_count = 0
-    downloaded_bytes = 0
-    total_bytes = 0
-    # show max eta
-    overall_eta = timedelta(0)
-    # average speed
-    overall_speed = 0
-    complete_count = 0
-    repo_id = ""
+    if current_time - last_web_broadcast_time >= 0.1:
+        last_web_broadcast_time = current_time
+        node_count = 0
+        downloaded_bytes = 0
+        total_bytes = 0
+        # show max eta
+        overall_eta = timedelta(0)
+        # average speed
+        overall_speed = 0
+        complete_count = 0
+        repo_id = ""
 
-    for _node_id, progress in node.node_download_progress.items():
-        if progress.status == "complete":
-            complete_count += 1
+        for _node_id, progress in node.node_download_progress.items():
+            if progress.status == "complete":
+                complete_count += 1
 
-        node_count += 1
-        downloaded_bytes += progress.downloaded_bytes
-        total_bytes += progress.total_bytes
-        overall_eta = max(overall_eta, progress.overall_eta)
-        overall_speed += progress.overall_speed
-        repo_id = progress.repo_id
+            node_count += 1
+            downloaded_bytes += progress.downloaded_bytes
+            total_bytes += progress.total_bytes
+            overall_eta = max(overall_eta, progress.overall_eta)
+            overall_speed += progress.overall_speed
+            repo_id = progress.repo_id
 
-    percentage = downloaded_bytes / total_bytes * 100 if total_bytes > 0 else 0
+        percentage = downloaded_bytes / total_bytes * 100 if total_bytes > 0 else 0
 
-    speed = pretty_print_bytes_per_second(overall_speed / node_count)
-    percentage_str = f"{percentage:.1f}%"
-    eta_str = f"{overall_eta}"
+        speed = pretty_print_bytes_per_second(overall_speed / node_count)
+        percentage_str = f"{percentage:.1f}%"
+        eta_str = f"{overall_eta}"
 
-    status = "in_progress"
+        status = "in_progress"
 
-    if complete_count >= node_count:
-        status = "complete"
+        if complete_count >= node_count:
+            status = "complete"
 
-    progress_data = {
-        "overall_eta": eta_str,
-        "overall_speed": speed,
-        "percentage": percentage_str,
-        "repo_id": repo_id,
-        "status": status,
-    }
+        progress_data = {
+            "overall_eta": eta_str,
+            "overall_speed": speed,
+            "percentage": percentage_str,
+            "repo_id": repo_id,
+            "status": status,
+        }
 
-    asyncio.create_task(api.broadcast(
-        json.dumps({"progress": progress_data, "type": "download_progress"})
-    ))
+        asyncio.create_task(api.broadcast(
+            json.dumps({"progress": progress_data, "type": "download_progress"})
+        ))
 
 node._on_download_progress.register("broadcast_web").on_next(throttled_broadcast_web)
 
